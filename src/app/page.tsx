@@ -58,6 +58,8 @@ interface SearchResult {
 interface SelectedNewsItem {
   id: string;
   news: SearchResult;
+  extractedContent: string | null;
+  isExtracting: boolean;
 }
 
 function getCategoryStyle(name: string, topics: Topic[]) {
@@ -270,17 +272,44 @@ export default function Home() {
     return selectedNews.some((item) => item.id === url);
   };
 
-  // Toggle news selection
+  // Toggle news selection + trigger extract on select
   const toggleNewsSelection = (news: SearchResult) => {
     const id = news.url;
-    setSelectedNews((prev) => {
-      const exists = prev.some((item) => item.id === id);
-      if (exists) {
-        return prev.filter((item) => item.id !== id);
-      } else {
-        return [...prev, { id, news }];
-      }
-    });
+    const exists = selectedNews.some((item) => item.id === id);
+
+    if (exists) {
+      setSelectedNews((prev) => prev.filter((item) => item.id !== id));
+    } else {
+      // Add with extracting state
+      setSelectedNews((prev) => [
+        ...prev,
+        { id, news, extractedContent: null, isExtracting: true },
+      ]);
+
+      // Fire extract API in background
+      fetch('/api/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: news.url }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          setSelectedNews((prev) =>
+            prev.map((item) =>
+              item.id === id
+                ? { ...item, extractedContent: data.extractedContent, isExtracting: false }
+                : item
+            )
+          );
+        })
+        .catch(() => {
+          setSelectedNews((prev) =>
+            prev.map((item) =>
+              item.id === id ? { ...item, isExtracting: false } : item
+            )
+          );
+        });
+    }
   };
 
   // Clear all selections
@@ -293,6 +322,10 @@ export default function Home() {
   const generateNewsletter = async () => {
     if (selectedNews.length === 0) return;
 
+    // Wait if any articles are still extracting
+    const stillExtracting = selectedNews.some((item) => item.isExtracting);
+    if (stillExtracting) return;
+
     setIsGenerating(true);
     try {
       const response = await fetch('/api/summarize', {
@@ -301,7 +334,7 @@ export default function Home() {
         body: JSON.stringify({
           articles: selectedNews.map((item) => ({
             title: item.news.title,
-            content: item.news.content,
+            content: item.extractedContent || item.news.content,
             source: item.news.source,
             category: item.news.category,
             url: item.news.url,
@@ -826,7 +859,19 @@ export default function Home() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-white font-medium line-clamp-2">{item.news.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">{item.news.source}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs text-slate-500">{item.news.source}</span>
+                            {item.isExtracting ? (
+                              <span className="flex items-center gap-1 text-xs text-amber-400">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Extracting...
+                              </span>
+                            ) : item.extractedContent ? (
+                              <span className="text-xs text-emerald-400">Full text ready</span>
+                            ) : (
+                              <span className="text-xs text-slate-500">Snippet only</span>
+                            )}
+                          </div>
                         </div>
                         <button
                           onClick={() => toggleNewsSelection(item.news)}
@@ -842,10 +887,15 @@ export default function Home() {
                 {/* Generate Button */}
                 <button
                   onClick={generateNewsletter}
-                  disabled={isGenerating}
+                  disabled={isGenerating || selectedNews.some((i) => i.isExtracting)}
                   className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 disabled:from-slate-600 disabled:to-slate-600 text-white font-semibold rounded-xl transition-all duration-300 mb-6"
                 >
-                  {isGenerating ? (
+                  {selectedNews.some((i) => i.isExtracting) ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Extracting articles...
+                    </>
+                  ) : isGenerating ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
                       Generating...
