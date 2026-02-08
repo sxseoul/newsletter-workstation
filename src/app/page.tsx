@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
+import { UserButton } from '@clerk/nextjs';
 import {
   Topic,
   loadTopics,
@@ -402,6 +403,7 @@ export default function Home() {
                 <RefreshCw className={`w-4 h-4 transition-transform duration-500 ${isLoading ? 'animate-spin' : 'group-hover:rotate-180'}`} />
                 <span className="hidden sm:inline">{isLoading ? 'Loading...' : 'Refresh'}</span>
               </button>
+              <UserButton signInUrl="/sign-in" />
             </div>
           </div>
         </div>
